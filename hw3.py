@@ -1,5 +1,6 @@
 import numpy as np
 import math
+import random
 
 def hinge_loss(train_y, pred_y):
     loss = 0
@@ -13,10 +14,10 @@ def squared_loss(train_y, pred_y):
         loss += (train_y[i] - pred_y[i])**2
     return loss
 	
-def exponential_loss(train_y, pred_y):
+def logistic_loss(train_y, pred_y):
     loss = 0
     for i in range(train_y.size):
-        loss += math.exp(-1 * train_y[i] * pred_y[i])
+        loss += (1/math.log(2)) * math.log(math.exp(-1 * train_y[i] * pred_y[i]))
     return loss
 	
 def l1_reg(w):
@@ -38,11 +39,16 @@ def train_classifier(train_x, train_y, learn_rate, loss, lambda_val, regularizer
     weights = np.random.random(train_x.shape[1])
     weights = weights * 2 - 1
 
+    if verbose:
+        score = compute_accuracy(train_y, test_classifier(weights, train_x))
+        print("Starting acc: %.3f" % score)
+
     # Number of times to iterate through the whole dataset
-    num_epochs = 1000
+    num_epochs = 100
 
     # Number of items in training batch
-    batch_size = 64
+    #batch_size = 64
+    batch_size = train_x.shape[0]
 
     if verbose:
         print("Training for %d epochs with batch size %d" % (num_epochs, batch_size))
@@ -63,7 +69,7 @@ def train_classifier(train_x, train_y, learn_rate, loss, lambda_val, regularizer
             if regularizer is not None:
                 orig_loss += lambda_val * regularizer(weights)
 
-            h = 0.0001
+            h = 0.00001
             dw = np.zeros(weights.size)
             for w in range(weights.size):
                 weights[w] += h
@@ -71,10 +77,10 @@ def train_classifier(train_x, train_y, learn_rate, loss, lambda_val, regularizer
                 new_loss = loss(batch_y, pred_y)
                 if regularizer is not None: 
                     new_loss += lambda_val * regularizer(weights)
-                dw[w] = (new_loss - orig_loss) / h
+                dw[w] += (new_loss - orig_loss) / h
                 weights[w] -= h
          
-            dw /= batch_size
+            dw /= batch_size 
             weights -= learn_rate * dw
 
         if verbose:
@@ -87,9 +93,7 @@ def train_classifier(train_x, train_y, learn_rate, loss, lambda_val, regularizer
             prog = int(20 * ((epoch + 1) / num_epochs))
             prog_bar = "[%s%s%s]" % ('=' * prog, ('=' if prog == 20 else '>'),  ' ' * (20 - prog))
             print("%06d/%06d - %s\tloss: %f" % (epoch + 1, num_epochs, prog_bar, end_loss), end="\r", flush=True)
-    if verbose:
-        print("\n")
-
+  
     return weights
 
 def test_classifier(w, test_x):
@@ -114,27 +118,18 @@ def main():
     # Load dataset
     data = np.genfromtxt('winequality.csv', delimiter=',', skip_header=1) 
 
-    # Parse dataset
+    # Parse/Normalize dataset
     x = data[:, :-1]
-    y = data[:, -1] 
+    y = data[:, -1]  
 
-    x_max = np.full(x.shape[1], -1.)
-    x_min = np.full(x.shape[1], -1.)
-    for i in range(y.size):
-        if y[i] > 5:
-            y[i] = 1.
-        else:
-            y[i] = -1.
+    x_mean = np.mean(x, axis=0)
+    x_stddev = np.std(x, axis=0)
 
-        for c in range(x.shape[1]):
-            if x_max[c] == -1 or x[i][c] > x_max[c]:
-                x_max[c] = x[i][c]
-            if x_min[c] == -1 or x[i][c] < x_min[c]:
-                x_min[c] = x[i][c]
+    x = np.subtract(x, x_mean)
+    x = np.divide(x, x_stddev)
 
-    for i in range(x.shape[0]):
-        x[i] -= x_min
-        x[i] /= x_max - x_min
+    # Add column of ones to x so biases can be learned
+    x = np.concatenate((np.ones((x.shape[0], 1)), x), axis=1)
 
     # Percent of data to use for testing
     test_split = 0.2
@@ -149,14 +144,35 @@ def main():
     test_y = y[test_p]
     train_x = x[train_p]
     train_y = y[train_p] 
+ 
+    losses = [squared_loss, hinge_loss, logistic_loss]
+    regs = [None, l1_reg, l2_reg]
+    learning_rate_range = (1e-5, 1e-2)
+    lambda_val_range = (1e-3, 1e-1)
 
+    for loss in losses:
+        for reg in regs:
+            for test in range(3): 
+                lr = random.uniform(learning_rate_range[0], learning_rate_range[1]) 
+                lv = random.uniform(lambda_val_range[0], lambda_val_range[1])
+
+                print("Loss: ", loss)
+                print("Reg: ", reg)
+                print("Learning Rate: ", lr)
+                print("Lambda Val: ", lv) 
+
+                w = train_classifier(train_x, train_y, lr, loss, lv, reg, verbose=True)
+                pred_y = test_classifier(w, test_x)
+                score = compute_accuracy(pred_y, test_y)
+                print("\nAcc: %.3f\n" % score)         
+    
     # Train classifier
-    w = train_classifier(train_x, train_y, 0.008, squared_loss, 0.1, l2_reg, verbose=True)
+    #w = train_classifier(train_x, train_y, 0.000001, squared_loss, 0.0001, l2_reg, verbose=True)
 
     # Test classifier
-    pred_y = test_classifier(w, test_x)
-    score = compute_accuracy(pred_y, test_y)
-    print("Final score: %f" % score)
+    #pred_y = test_classifier(w, test_x)
+    #score = compute_accuracy(pred_y, test_y)
+    #print("Final score: %f" % score)
 
     return None
 
@@ -167,8 +183,8 @@ def tests():
     if l2_reg(w) == 10.:
         print("test 2 passed")
 
-    train_y = np.array([1., 1., -1., 1., -1])
-    pred_y = np.array([1., -1., -1., 1., 1.])
+    print(train_y = np.array([1., 1., -1., 1., -1]))
+    print(pred_y = np.array([1., -1., -1., 1., 1.]))
 
     if compute_accuracy(train_y, pred_y) == 0.6:
         print("test 3 passed")
