@@ -4,21 +4,30 @@ import random
 
 def hinge_loss(train_y, pred_y):
     loss = 0
+    score = 0
     for i in range(train_y.size):
         loss += max(0, 1 - train_y[i] * pred_y[i])
-    return loss
+        if train_y[i] * pred_y[i] > 0:
+            score += 1
+    return loss, (score / train_y.size)
 	
 def squared_loss(train_y, pred_y):    
     loss = 0
+    score = 0
     for i in range(train_y.size):
         loss += (train_y[i] - pred_y[i])**2
-    return loss
+        if train_y[i] * pred_y[i] > 0:
+            score += 1
+    return loss, (score / train_y.size)
 	
 def logistic_loss(train_y, pred_y):
     loss = 0
+    score = 0
     for i in range(train_y.size):
-        loss += (1/math.log(2)) * math.log(math.exp(-1 * train_y[i] * pred_y[i]))
-    return loss
+        loss += (1/math.log(2)) * math.log(1 + math.exp(-1 * train_y[i] * pred_y[i]))
+        if train_y[i] * pred_y[i] > 0:
+            score += 1
+    return loss, (score / train_y.size)
 	
 def l1_reg(w):
     return np.sum(np.absolute(w))
@@ -34,7 +43,7 @@ def shuffle_arrays(a, b):
     p = np.random.permutation(a.shape[0])
     return a[p], b[p]
 
-def train_classifier(train_x, train_y, learn_rate, loss, lambda_val, regularizer, verbose=False):   
+def train_classifier(train_x, train_y, learn_rate, loss, lambda_val, regularizer, num_epochs, batch_size=None, verbose=False):   
     # Initialize weights
     weights = np.random.random(train_x.shape[1])
     weights = weights * 2 - 1
@@ -43,12 +52,9 @@ def train_classifier(train_x, train_y, learn_rate, loss, lambda_val, regularizer
         score = compute_accuracy(train_y, test_classifier(weights, train_x))
         print("Starting acc: %.3f" % score)
 
-    # Number of times to iterate through the whole dataset
-    num_epochs = 100
-
     # Number of items in training batch
-    #batch_size = 64
-    batch_size = train_x.shape[0]
+    if batch_size is None: 
+        batch_size = train_x.shape[0]
 
     if verbose:
         print("Training for %d epochs with batch size %d" % (num_epochs, batch_size))
@@ -65,7 +71,7 @@ def train_classifier(train_x, train_y, learn_rate, loss, lambda_val, regularizer
             batch_y = train_y[start_ix:stop_ix]
 
             # Compute average gradients for batch 
-            orig_loss = loss(batch_y, test_classifier(weights, batch_x))
+            orig_loss, _ = loss(batch_y, test_classifier(weights, batch_x))
             if regularizer is not None:
                 orig_loss += lambda_val * regularizer(weights)
 
@@ -74,7 +80,7 @@ def train_classifier(train_x, train_y, learn_rate, loss, lambda_val, regularizer
             for w in range(weights.size):
                 weights[w] += h
                 pred_y = test_classifier(weights, batch_x)
-                new_loss = loss(batch_y, pred_y)
+                new_loss, _ = loss(batch_y, pred_y)
                 if regularizer is not None: 
                     new_loss += lambda_val * regularizer(weights)
                 dw[w] += (new_loss - orig_loss) / h
@@ -85,14 +91,14 @@ def train_classifier(train_x, train_y, learn_rate, loss, lambda_val, regularizer
 
         if verbose:
             pred_y = test_classifier(weights, train_x)
-            end_loss = loss(train_y, pred_y)
+            end_loss, score = loss(train_y, pred_y)
             if regularizer is not None:
                 end_loss += lambda_val * regularizer(weights)
             end_loss /= train_y.size
 
             prog = int(20 * ((epoch + 1) / num_epochs))
             prog_bar = "[%s%s%s]" % ('=' * prog, ('=' if prog == 20 else '>'),  ' ' * (20 - prog))
-            print("%06d/%06d - %s\tloss: %f" % (epoch + 1, num_epochs, prog_bar, end_loss), end="\r", flush=True)
+            print("%06d/%06d - %s\tloss: %.4f, training_acc: %.4f" % (epoch + 1, num_epochs, prog_bar, end_loss, score), end="\r", flush=True)
   
     return weights
 
